@@ -1,0 +1,66 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Playfair+Display:ital,wght@1,400;1,600;1,700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Outfit", sans-serif;
+  --font-serif: "Playfair Display", serif;
+  
+  /* Light Cream Theme Variables */
+  --color-cream-bg: #F5F2EB;
+  --color-cream-card: #FCFAF7;
+  --color-cream-pill: #EAE6DD;
+  --color-cream-border: #E2DDD3;
+  --color-cream-input: #FFFFFF;
+  --color-cream-text: #1C1917;
+  --color-cream-muted: #706A62;
+}
+
+/* Dark Mode Theme Overrides */
+.dark {
+  --color-cream-bg: #0F0E0C;
+  --color-cream-card: #171513;
+  --color-cream-pill: #26231E;
+  --color-cream-border: #2C2823;
+  --color-cream-input: #080706;
+  --color-cream-text: #F5F2EB;
+  --color-cream-muted: #9E998F;
+}
+
+/* Global scrollbar adjustments matching the aesthetic */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-cream-border);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-cream-pill);
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--color-cream-bg);
+  color: var(--color-cream-text);
+  font-family: var(--font-sans);
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Micro animations */
+@keyframes float {
+  0% { transform: translateY(0px); }
+  50% { transform: translateY(-3px); }
+  100% { transform: translateY(0px); }
+}
+
+.animate-float {
+  animation: float 4s ease-in-out infinite;
+}

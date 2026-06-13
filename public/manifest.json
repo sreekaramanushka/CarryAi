@@ -1,0 +1,52 @@
+{
+  "manifest_version": 3,
+  "name": "CarryAI",
+  "version": "1.0.0",
+  "description": "Carry your AI conversation context, decisions, and goals between sessions and platforms.",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "sidePanel",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://*.chatgpt.com/*",
+    "https://*.claude.ai/*",
+    "https://*.gemini.google.com/*",
+    "https://*.perplexity.ai/*",
+    "https://*.poe.com/*",
+    "https://*.deepseek.com/*",
+    "http://localhost:3000/*",
+    "http://localhost:8080/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.chatgpt.com/*",
+        "https://*.claude.ai/*",
+        "https://*.gemini.google.com/*",
+        "https://*.perplexity.ai/*",
+        "https://*.poe.com/*",
+        "https://*.deepseek.com/*",
+        "http://localhost:3000/*",
+        "http://localhost:8080/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "Open CarryAI"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  }
+}
