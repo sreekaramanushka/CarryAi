@@ -47,7 +47,7 @@ const AppContent: React.FC = () => {
           </div>
         </div>
         <div className="text-[10px] font-bold text-cream-text bg-cream-pill px-3 py-1 rounded-full border border-cream-border/20 shadow-sm">
-          MVP
+          v1.0
         </div>
       </header>
 

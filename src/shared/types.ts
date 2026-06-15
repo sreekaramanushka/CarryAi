@@ -3,10 +3,12 @@ export interface Message {
   content: string;
   timestamp?: string;
   id?: string;
+  images?: string[];
+  files?: string[];
 }
 
 export interface ScrapedConversation {
-  platform: 'chatgpt' | 'claude' | 'gemini' | 'perplexity' | 'poe' | 'deepseek' | 'openwebui' | 'unknown';
+  platform: 'chatgpt' | 'claude' | 'gemini' | 'perplexity' | 'poe' | 'deepseek' | 'grok' | 'openwebui' | 'unknown';
   title: string;
   url: string;
   messages: Message[];

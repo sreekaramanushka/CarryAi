@@ -3,6 +3,41 @@ import type { Capsule } from '../../shared/types';
 import { triggerCapsuleDownload, buildRestorationPrompt } from '../../capsule/exporter';
 import { Search, Download, Copy, Trash2, Calendar, FileText, Check, ChevronDown, ChevronUp } from 'lucide-react';
 
+function highlightText(text: string, query: string) {
+  if (!query || !text) return <span>{text}</span>;
+  const parts = text.split(new RegExp(`(${query.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&')})`, 'gi'));
+  return (
+    <span>
+      {parts.map((part, i) => 
+        part.toLowerCase() === query.toLowerCase() ? (
+          <mark key={i} className="bg-amber-100 dark:bg-amber-900/60 text-neutral-900 dark:text-amber-100 px-0.5 rounded border border-amber-200/50 dark:border-amber-700/50 font-medium">
+            {part}
+          </mark>
+        ) : (
+          part
+        )
+      )}
+    </span>
+  );
+}
+
+function getMessageSearchSnippet(messages: any[] | undefined, query: string): { snippet: string; matched: boolean } {
+  if (!messages || !query) return { snippet: '', matched: false };
+  const lowerQuery = query.toLowerCase();
+  for (const m of messages) {
+    const idx = m.content.toLowerCase().indexOf(lowerQuery);
+    if (idx !== -1) {
+      const start = Math.max(0, idx - 40);
+      const end = Math.min(m.content.length, idx + lowerQuery.length + 60);
+      let snippet = m.content.substring(start, end);
+      if (start > 0) snippet = '...' + snippet;
+      if (end < m.content.length) snippet = snippet + '...';
+      return { snippet, matched: true };
+    }
+  }
+  return { snippet: '', matched: false };
+}
+
 export const LibraryTab: React.FC = () => {
   const [library, setLibrary] = useState<Capsule[]>([]);
   const [search, setSearch] = useState('');
@@ -48,11 +83,14 @@ export const LibraryTab: React.FC = () => {
 
   const filteredCapsules = library.filter((c) => {
     const query = search.toLowerCase();
+    if (!query) return true;
+    const matchesMessages = c.messages ? c.messages.some(m => m.content.toLowerCase().includes(query)) : false;
     return (
       c.title.toLowerCase().includes(query) ||
       c.platform.toLowerCase().includes(query) ||
       c.summary.toLowerCase().includes(query) ||
-      c.current_goal.toLowerCase().includes(query)
+      c.current_goal.toLowerCase().includes(query) ||
+      matchesMessages
     );
   });
 
@@ -62,10 +100,10 @@ export const LibraryTab: React.FC = () => {
       <div className="relative">
         <input
           type="text"
-          placeholder="Search capsules library..."
+          placeholder="Search capsules library & chat logs..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="w-full bg-cream-input border border-cream-border focus:border-cream-text focus:ring-1 focus:ring-cream-text rounded-xl py-2.5 pl-9 pr-4 text-xs text-cream-text placeholder-cream-muted/50 outline-none transition-all shadow-inner"
+          className="w-full bg-cream-input border border-cream-border focus:border-cream-text focus:ring-1 focus:ring-cream-text rounded-xl py-2.5 pl-9 pr-4 text-xs text-cream-text placeholder-cream-muted/50 outline-none transition-all shadow-inner font-medium"
         />
         <Search className="w-4 h-4 text-cream-muted absolute left-3 top-3" />
       </div>
@@ -74,9 +112,9 @@ export const LibraryTab: React.FC = () => {
       {filteredCapsules.length === 0 ? (
         <div className="text-center py-16 border border-dashed border-cream-border rounded-2xl bg-cream-card/20">
           <FileText className="w-8 h-8 text-cream-border mx-auto mb-3" />
-          <p className="text-xs text-cream-text font-bold">No capsules saved yet.</p>
+          <p className="text-xs text-cream-text font-bold">No capsules found.</p>
           <p className="text-[10px] text-cream-muted mt-1.5 max-w-[180px] mx-auto leading-normal">
-            Synthesize a live conversation chat log to populate your library.
+            No saved capsules or messages match your current query.
           </p>
         </div>
       ) : (
@@ -91,7 +129,7 @@ export const LibraryTab: React.FC = () => {
                 <div className="flex justify-between items-start mb-2.5">
                   <div>
                     <h3 className="text-xs font-bold text-cream-text leading-snug">
-                      {capsule.title}
+                      {search ? highlightText(capsule.title, search) : capsule.title}
                     </h3>
                     <div className="flex gap-2.5 items-center mt-1 text-[10px] text-cream-muted font-medium">
                       <span className="bg-cream-pill px-2 py-0.5 rounded-full capitalize text-[9px] border border-cream-border/30 font-semibold">
@@ -112,10 +150,10 @@ export const LibraryTab: React.FC = () => {
                     >
                       {copiedId === capsule.id ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
                     </button>
-                    {/* Exporter menu */}
+                    {/* Exporter menu (HTML by default for ease) */}
                     <button
-                      onClick={() => triggerCapsuleDownload(capsule, 'capsule')}
-                      title="Download capsule"
+                      onClick={() => triggerCapsuleDownload(capsule, 'html')}
+                      title="Download HTML transcript"
                       className="bg-cream-input hover:bg-cream-pill hover:text-cream-text text-cream-muted rounded-full p-2 border border-cream-border transition-colors cursor-pointer"
                     >
                       <Download className="w-3.5 h-3.5" />
@@ -132,15 +170,33 @@ export const LibraryTab: React.FC = () => {
                 </div>
 
                 <p className="text-[11px] text-cream-muted leading-relaxed mt-3 select-all">
-                  {capsule.summary}
+                  {search ? highlightText(capsule.summary, search) : capsule.summary}
                 </p>
+
+                {/* Inline Match Snippet if matching chat history */}
+                {search && (() => {
+                  const { snippet, matched } = getMessageSearchSnippet(capsule.messages, search);
+                  if (matched) {
+                    return (
+                      <div className="mt-3 p-2 bg-cream-pill/40 border border-cream-border/40 rounded-xl">
+                        <div className="text-[9px] uppercase font-bold text-cream-muted tracking-wider mb-0.5">Match in messages:</div>
+                        <p className="text-[10px] text-cream-muted leading-relaxed italic select-all font-mono">
+                          {highlightText(snippet, search)}
+                        </p>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
 
                 {/* Expansion Details */}
                 {isExpanded && (
                   <div className="mt-4 pt-4 border-t border-cream-border/60 space-y-3.5">
                     <div className="space-y-1">
                       <div className="text-[9px] uppercase font-bold tracking-wider text-cream-muted">Current Objective:</div>
-                      <div className="text-[11px] text-cream-text leading-normal">{capsule.current_goal}</div>
+                      <div className="text-[11px] text-cream-text leading-normal">
+                        {search ? highlightText(capsule.current_goal, search) : capsule.current_goal}
+                      </div>
                     </div>
 
                     {capsule.important_decisions.length > 0 && (
@@ -148,7 +204,9 @@ export const LibraryTab: React.FC = () => {
                         <div className="text-[9px] uppercase font-bold tracking-wider text-cream-muted">Key Decisions:</div>
                         <ul className="list-disc list-inside text-[11px] text-cream-muted space-y-0.5 pl-0.5">
                           {capsule.important_decisions.map((dec, idx) => (
-                            <li key={idx} className="truncate">{dec}</li>
+                            <li key={idx} className="truncate">
+                              {search ? highlightText(dec, search) : dec}
+                            </li>
                           ))}
                         </ul>
                       </div>
@@ -161,7 +219,9 @@ export const LibraryTab: React.FC = () => {
                           {capsule.unresolved_tasks.map((task, idx) => (
                             <li key={idx} className="flex items-center gap-1.5">
                               <span className="w-1 h-1 rounded-full bg-cream-text"></span>
-                              <span className="truncate">{task.text}</span>
+                              <span className="truncate">
+                                {search ? highlightText(task.text, search) : task.text}
+                              </span>
                             </li>
                           ))}
                         </ul>
@@ -175,25 +235,33 @@ export const LibraryTab: React.FC = () => {
                           {capsule.messages.map((m, idx) => (
                             <div key={idx} className="text-[10px] leading-relaxed border-b border-cream-border/10 pb-1.5 last:border-b-0 last:pb-0">
                               <div className="font-bold text-cream-text/90 capitalize mb-0.5">{m.role === 'user' ? 'User' : 'Assistant'}</div>
-                              <div className="text-cream-muted select-text whitespace-pre-wrap">{m.content}</div>
+                              <div className="text-cream-muted select-text whitespace-pre-wrap">
+                                {search ? highlightText(m.content, search) : m.content}
+                              </div>
                             </div>
                           ))}
                         </div>
                       </div>
                     )}
 
-                    <div className="flex gap-2 pt-2">
+                    <div className="flex gap-1.5 pt-2 flex-wrap">
                       <button
                         onClick={() => triggerCapsuleDownload(capsule, 'markdown')}
-                        className="flex-1 bg-cream-input hover:bg-cream-pill border border-cream-border rounded-full py-1.5 px-3 text-[10px] font-bold text-cream-text transition-colors cursor-pointer text-center"
+                        className="flex-1 bg-cream-input hover:bg-cream-pill border border-cream-border rounded-full py-1.5 px-2 text-[9px] font-bold text-cream-text transition-colors cursor-pointer text-center whitespace-nowrap"
                       >
-                        Markdown Summary
+                        Markdown
+                      </button>
+                      <button
+                        onClick={() => triggerCapsuleDownload(capsule, 'html')}
+                        className="flex-1 bg-cream-input hover:bg-cream-pill border border-cream-border rounded-full py-1.5 px-2 text-[9px] font-bold text-cream-text transition-colors cursor-pointer text-center whitespace-nowrap"
+                      >
+                        HTML Chat
                       </button>
                       <button
                         onClick={() => triggerCapsuleDownload(capsule, 'json')}
-                        className="flex-1 bg-cream-input hover:bg-cream-pill border border-cream-border rounded-full py-1.5 px-3 text-[10px] font-bold text-cream-text transition-colors cursor-pointer text-center"
+                        className="flex-1 bg-cream-input hover:bg-cream-pill border border-cream-border rounded-full py-1.5 px-2 text-[9px] font-bold text-cream-text transition-colors cursor-pointer text-center whitespace-nowrap"
                       >
-                        JSON Format
+                        JSON
                       </button>
                     </div>
                   </div>

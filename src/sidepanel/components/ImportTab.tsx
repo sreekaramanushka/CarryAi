@@ -117,21 +117,44 @@ export const ImportTab: React.FC = () => {
   return (
     <div className="space-y-5">
       {!importedCapsule ? (
-        // Drop zone
-        <div
-          onDragEnter={handleDrag}
-          onDragOver={handleDrag}
-          onDragLeave={handleDrag}
-          onDrop={handleDrop}
-          className={`border-2 border-dashed rounded-2xl p-10 text-center transition-all ${
-            dragActive
-              ? 'border-cream-text bg-cream-pill/40'
-              : 'border-cream-border bg-cream-card/45 hover:border-cream-text/70'
-          }`}
-        >
-          <UploadCloud className="w-10 h-10 text-cream-text/80 mx-auto mb-4" />
-          <p className="text-xs font-bold text-cream-text">Drag & Drop Capsule File</p>
-          <p className="text-[10px] text-cream-muted mt-1 font-medium">Supports .capsule or .json files</p>
+        <>
+          {/* Explanation Card */}
+          <div className="bg-cream-card border border-cream-border rounded-2xl p-4.5 shadow-sm space-y-2.5">
+            <h3 className="text-xs font-bold text-cream-text">Why Import Capsules?</h3>
+            <p className="text-[10px] text-cream-muted leading-relaxed font-medium">
+              Importing allows you to restore a previously downloaded session state (a <code className="bg-cream-pill px-1 py-0.5 rounded font-mono text-[9px]">.capsule</code> or <code className="bg-cream-pill px-1 py-0.5 rounded font-mono text-[9px]">.json</code> file) into the active AI chat prompt box.
+            </p>
+            <div className="space-y-2 mt-1">
+              <div className="flex gap-2 items-start text-[10px] text-cream-muted">
+                <span className="text-cream-text">🔄</span>
+                <span className="leading-normal font-medium"><strong>Cross-Device Portability:</strong> Move your active context and memory to other browsers or devices.</span>
+              </div>
+              <div className="flex gap-2 items-start text-[10px] text-cream-muted">
+                <span className="text-cream-text">💾</span>
+                <span className="leading-normal font-medium"><strong>Backup & Restore:</strong> Archive project snapshots locally and load them to continue anytime.</span>
+              </div>
+              <div className="flex gap-2 items-start text-[10px] text-cream-muted">
+                <span className="text-cream-text">⚡</span>
+                <span className="leading-normal font-medium"><strong>One-Click Autofill:</strong> Fill the chat input field with goals, style choices, and pending tasks instantly.</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Drop zone */}
+          <div
+            onDragEnter={handleDrag}
+            onDragOver={handleDrag}
+            onDragLeave={handleDrag}
+            onDrop={handleDrop}
+            className={`border-2 border-dashed rounded-2xl p-10 text-center transition-all ${
+              dragActive
+                ? 'border-cream-text bg-cream-pill/40'
+                : 'border-cream-border bg-cream-card/45 hover:border-cream-text/70'
+            }`}
+          >
+            <UploadCloud className="w-10 h-10 text-cream-text/80 mx-auto mb-4" />
+            <p className="text-xs font-bold text-cream-text">Drag & Drop Capsule File</p>
+            <p className="text-[10px] text-cream-muted mt-1 font-medium">Supports .capsule or .json files</p>
           <div className="mt-5">
             <label className="bg-cream-input hover:bg-cream-pill border border-cream-border rounded-full px-5 py-2 text-[10px] font-bold text-cream-text transition-colors cursor-pointer select-none">
               Browse Files
@@ -150,6 +173,7 @@ export const ImportTab: React.FC = () => {
             </div>
           )}
         </div>
+        </>
       ) : (
         // Preview zone
         <div className="space-y-4">

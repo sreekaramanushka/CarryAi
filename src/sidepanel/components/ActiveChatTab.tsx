@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import type { ScrapedConversation, Capsule } from '../../shared/types';
 import { generateCapsule, generateHeuristicSummary } from '../../capsule/summarizer';
-import { Eye, Plus, Trash2, Cpu, FileText, CheckCircle, RefreshCw, AlertCircle } from 'lucide-react';
+import { buildRestorationPrompt, triggerCapsuleDownload } from '../../capsule/exporter';
+import { Eye, Plus, Trash2, Cpu, FileText, CheckCircle, RefreshCw, AlertCircle, ArrowRight } from 'lucide-react';
 
 interface ActiveChatTabProps {
   onCapsuleSaved: () => void;
@@ -22,6 +23,7 @@ export const ActiveChatTab: React.FC<ActiveChatTabProps> = ({ onCapsuleSaved }) 
   const [newTask, setNewTask] = useState('');
   
   const [isGenerating, setIsGenerating] = useState(false);
+  const [exportFormat, setExportFormat] = useState<'html' | 'markdown' | 'json' | 'capsule'>('html');
 
   const getApiKeys = (): Promise<{ openai: string; gemini: string }> => {
     return new Promise((resolve) => {
@@ -63,10 +65,10 @@ export const ActiveChatTab: React.FC<ActiveChatTabProps> = ({ onCapsuleSaved }) 
       }
 
       const url = activeTab.url || '';
-      const matched = ['chatgpt.com', 'claude.ai', 'gemini.google.com', 'perplexity.ai', 'poe.com', 'deepseek.com', 'localhost:3000', 'localhost:8080'].some(p => url.includes(p));
+      const matched = ['chatgpt.com', 'claude.ai', 'gemini.google.com', 'perplexity.ai', 'poe.com', 'deepseek.com', 'grok.com', 'localhost:3000', 'localhost:8080'].some(p => url.includes(p));
 
       if (!matched) {
-        setError("Navigate to a supported AI client (ChatGPT, Claude, Gemini, Perplexity, Poe, DeepSeek) to scrape.");
+        setError("Navigate to a supported AI client (ChatGPT, Claude, Gemini, Perplexity, Poe, DeepSeek, Grok) to scrape.");
         return;
       }
 
@@ -87,12 +89,12 @@ export const ActiveChatTab: React.FC<ActiveChatTabProps> = ({ onCapsuleSaved }) 
               // Wait 150ms for script initialization, then message again
               setTimeout(() => {
                 chrome.tabs.sendMessage(tabId, { type: 'START_LIVE_OBSERVER' }, (secondResponse) => {
-                  if (chrome.runtime.lastError) {
-                    setError("Failed to connect scraper. Please reload the AI chat page manually.");
-                  } else if (secondResponse && secondResponse.payload) {
-                    setConversation(secondResponse.payload);
-                    setIsObserving(true);
-                  }
+                   if (chrome.runtime.lastError) {
+                     setError("Failed to connect scraper. Please reload the AI chat page manually.");
+                   } else if (secondResponse && secondResponse.payload) {
+                     setConversation(secondResponse.payload);
+                     setIsObserving(true);
+                   }
                 });
               }, 150);
             });
@@ -174,33 +176,66 @@ export const ActiveChatTab: React.FC<ActiveChatTabProps> = ({ onCapsuleSaved }) 
     setTasks(tasks.filter((_, i) => i !== index));
   };
 
-  const handleCreateCapsule = async () => {
-    if (!conversation) return;
-    setIsGenerating(true);
-
-    try {
-      const keys = await getApiKeys();
-      const capsule = await generateCapsule(conversation, keys);
-
-      const finalCapsule: Capsule = {
-        ...capsule,
-        title: title.trim() || capsule.title,
-        current_goal: goal.trim() || capsule.current_goal,
-        important_decisions: decisions.length > 0 ? decisions : capsule.important_decisions,
-        unresolved_tasks: tasks.length > 0 
-          ? tasks.map(t => ({ text: t, completed: false })) 
-          : capsule.unresolved_tasks,
-        user_preferences: {
-          ...capsule.user_preferences,
-          custom_notes: styleNotes.trim()
+  const getLatestConversation = (): Promise<ScrapedConversation> => {
+    return new Promise((resolve) => {
+      if (typeof chrome === 'undefined' || !chrome.tabs) {
+        resolve(conversation!);
+        return;
+      }
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        const activeTab = tabs[0];
+        if (!activeTab || !activeTab.id) {
+          resolve(conversation!);
+          return;
         }
-      };
+        chrome.tabs.sendMessage(activeTab.id, { type: 'SCRAPE_CURRENT_PAGE' }, (response) => {
+          if (chrome.runtime.lastError || !response || !response.payload) {
+            console.log('CarryAI: Fallback to existing conversation state.');
+            resolve(conversation!);
+          } else {
+            console.log('CarryAI: Retrieved latest scrape for capsule synthesis.');
+            resolve(response.payload);
+          }
+        });
+      });
+    });
+  };
 
+  // Helper to compile current details to Capsule object
+  const buildFinalCapsule = async (): Promise<Capsule | null> => {
+    if (!conversation) return null;
+    const latestConv = await getLatestConversation();
+    const keys = await getApiKeys();
+    const capsule = await generateCapsule(latestConv, keys);
+
+    return {
+      ...capsule,
+      title: title.trim() || capsule.title,
+      current_goal: goal.trim() || capsule.current_goal,
+      important_decisions: decisions.length > 0 ? decisions : capsule.important_decisions,
+      unresolved_tasks: tasks.length > 0 
+        ? tasks.map(t => ({ text: t, completed: false })) 
+        : capsule.unresolved_tasks,
+      user_preferences: {
+        ...capsule.user_preferences,
+        custom_notes: styleNotes.trim()
+      }
+    };
+  };
+
+  const handleExport = async () => {
+    setIsGenerating(true);
+    try {
+      const finalCapsule = await buildFinalCapsule();
+      if (!finalCapsule) return;
+
+      // Save to library local storage
       if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
         chrome.storage.local.get(['capsulesLibrary'], (result) => {
           const library = result.capsulesLibrary || [];
           const updatedLib = [finalCapsule, ...library.filter((c: Capsule) => c.id !== finalCapsule.id)];
           chrome.storage.local.set({ capsulesLibrary: updatedLib }, () => {
+            triggerCapsuleDownload(finalCapsule, exportFormat);
             setIsGenerating(false);
             onCapsuleSaved();
           });
@@ -208,6 +243,42 @@ export const ActiveChatTab: React.FC<ActiveChatTabProps> = ({ onCapsuleSaved }) 
       } else {
         const demoLib = JSON.parse(localStorage.getItem('capsulesLibrary') || '[]');
         localStorage.setItem('capsulesLibrary', JSON.stringify([finalCapsule, ...demoLib]));
+        triggerCapsuleDownload(finalCapsule, exportFormat);
+        setIsGenerating(false);
+        onCapsuleSaved();
+      }
+    } catch (err) {
+      console.error(err);
+      setIsGenerating(false);
+    }
+  };
+
+  const handleContinueOn = async (platformName: string, targetUrl: string) => {
+    setIsGenerating(true);
+    try {
+      const finalCapsule = await buildFinalCapsule();
+      if (!finalCapsule) return;
+
+      const prompt = buildRestorationPrompt(finalCapsule);
+
+      // Save prompt for auto-injection in the opened tab
+      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+        chrome.storage.local.set({ pendingInjectionPrompt: prompt }, () => {
+          chrome.storage.local.get(['capsulesLibrary'], (result) => {
+            const library = result.capsulesLibrary || [];
+            const updatedLib = [finalCapsule, ...library.filter((c: Capsule) => c.id !== finalCapsule.id)];
+            chrome.storage.local.set({ capsulesLibrary: updatedLib }, () => {
+              chrome.tabs.create({ url: targetUrl });
+              setIsGenerating(false);
+              onCapsuleSaved();
+            });
+          });
+        });
+      } else {
+        const demoLib = JSON.parse(localStorage.getItem('capsulesLibrary') || '[]');
+        localStorage.setItem('capsulesLibrary', JSON.stringify([finalCapsule, ...demoLib]));
+        localStorage.setItem('pendingInjectionPrompt', prompt);
+        alert(`Continuity triggered for ${platformName}.\nStorage staged, opening: ${targetUrl}`);
         setIsGenerating(false);
         onCapsuleSaved();
       }
@@ -220,12 +291,12 @@ export const ActiveChatTab: React.FC<ActiveChatTabProps> = ({ onCapsuleSaved }) 
   if (error) {
     return (
       <div className="bg-cream-card border border-cream-border rounded-2xl p-6 text-center flex flex-col items-center gap-4 shadow-sm">
-        <AlertCircle className="w-8 h-8 text-neutral-800" />
+        <AlertCircle className="w-8 h-8 text-cream-text" />
         <h3 className="text-sm font-bold text-cream-text">Connection Offline</h3>
         <p className="text-xs text-cream-muted leading-relaxed max-w-xs">{error}</p>
         <button
           onClick={connectToActiveTab}
-          className="text-xs font-semibold text-cream-text hover:bg-cream-pill flex items-center gap-1.5 transition-colors bg-cream-input py-2 px-4 rounded-full border border-cream-border cursor-pointer"
+          className="text-xs font-semibold text-cream-text hover:bg-cream-pill flex items-center gap-1.5 transition-all bg-cream-input py-2 px-4 rounded-full border border-cream-border cursor-pointer"
         >
           <RefreshCw className="w-3.5 h-3.5" /> Reconnect Scraper
         </button>
@@ -247,59 +318,113 @@ export const ActiveChatTab: React.FC<ActiveChatTabProps> = ({ onCapsuleSaved }) 
 
   return (
     <div className="space-y-6">
-      {/* Active Conversation Meta Card */}
+      {/* 1. Direct Continuation & Main Exporter Actions */}
       <div className="bg-cream-card border border-cream-border rounded-2xl p-5 shadow-sm space-y-4">
         <div className="flex justify-between items-center">
           <span className="bg-cream-pill text-cream-text text-[9px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider flex items-center gap-1.5 border border-cream-border/30">
             <span className="w-1.5 h-1.5 rounded-full bg-cream-text animate-pulse"></span>
-            Observing
+            Observing turns
           </span>
-          <span className="text-[10px] text-cream-muted font-semibold capitalize bg-cream-pill/40 px-2 py-0.5 rounded">
+          <span className="text-[10px] text-cream-muted font-bold capitalize bg-cream-pill/40 px-2.5 py-0.5 rounded">
             {conversation.platform}
           </span>
         </div>
 
-        <div className="space-y-1.5">
-          <label className="text-[9px] uppercase tracking-wider text-cream-muted font-bold">Capsule Title</label>
+        <div className="space-y-1">
+          <label className="text-[9px] uppercase tracking-wider text-cream-muted font-bold">Title</label>
           <input
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            className="w-full bg-cream-input border border-cream-border focus:border-cream-text focus:ring-1 focus:ring-cream-text rounded-xl py-2 px-3 text-xs text-cream-text outline-none transition-all shadow-inner"
+            className="w-full bg-cream-input border border-cream-border focus:border-cream-text focus:ring-1 focus:ring-cream-text rounded-xl py-2 px-3 text-xs text-cream-text outline-none transition-all shadow-inner font-medium"
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-3 pt-1 text-center">
-          <div className="bg-cream-bg/40 py-2.5 px-3 rounded-xl border border-cream-border/40">
-            <div className="text-base font-extrabold text-cream-text">{conversation.messages.length}</div>
-            <div className="text-[9px] text-cream-muted font-semibold uppercase tracking-wider mt-0.5">Turns</div>
+        <div className="grid grid-cols-2 gap-3 text-center">
+          <div className="bg-cream-bg/40 py-2 px-3 rounded-xl border border-cream-border/40">
+            <div className="text-sm font-extrabold text-cream-text">{conversation.messages.length}</div>
+            <div className="text-[8px] text-cream-muted font-bold uppercase tracking-wider">Turns</div>
           </div>
-          <div className="bg-cream-bg/40 py-2.5 px-3 rounded-xl border border-cream-border/40">
-            <div className="text-base font-extrabold text-cream-text">
+          <div className="bg-cream-bg/40 py-2 px-3 rounded-xl border border-cream-border/40">
+            <div className="text-sm font-extrabold text-cream-text">
               {conversation.messages.filter(m => m.role === 'user').length}
             </div>
-            <div className="text-[9px] text-cream-muted font-semibold uppercase tracking-wider mt-0.5">Prompts</div>
+            <div className="text-[8px] text-cream-muted font-bold uppercase tracking-wider">Prompts</div>
           </div>
+        </div>
+
+        {/* Action button */}
+        <button
+          onClick={handleExport}
+          disabled={isGenerating || conversation.messages.length === 0}
+          className="w-full bg-cream-text hover:bg-neutral-800 disabled:bg-cream-muted/40 text-cream-bg rounded-full py-3 px-6 font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-sm"
+        >
+          {isGenerating ? <Cpu className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+          Export & Save Conversation
+        </button>
+
+        {/* Format Selectors */}
+        <div className="flex gap-1 bg-cream-pill p-1 rounded-xl border border-cream-border/20">
+          {(['html', 'markdown', 'json', 'capsule'] as const).map((fmt) => (
+            <button
+              key={fmt}
+              onClick={() => setExportFormat(fmt)}
+              className={`flex-1 text-[9px] font-bold py-1.5 rounded-lg uppercase transition-all cursor-pointer ${
+                exportFormat === fmt
+                  ? 'bg-cream-card text-cream-text shadow-sm'
+                  : 'text-cream-muted hover:text-cream-text'
+              }`}
+            >
+              {fmt === 'markdown' ? 'MD' : fmt}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Manual Meta Overrides */}
-      <div className="space-y-5">
+      {/* 2. CONTINUE CHAT ON... Grid */}
+      <div className="bg-cream-card border border-cream-border rounded-2xl p-5 shadow-sm space-y-3">
+        <h3 className="text-[9px] uppercase tracking-wider font-bold text-cream-muted">Continue Chat on...</h3>
+        <div className="grid grid-cols-4 gap-2">
+          {[
+            { name: 'ChatGPT', url: 'https://chatgpt.com/', icon: '💬' },
+            { name: 'Claude', url: 'https://claude.ai/new', icon: '🤖' },
+            { name: 'Gemini', url: 'https://gemini.google.com/app', icon: '⭐' },
+            { name: 'Grok', url: 'https://grok.com/', icon: '✖️' },
+            { name: 'Perplexity', url: 'https://www.perplexity.ai/', icon: '🔍' },
+            { name: 'Poe', url: 'https://poe.com/', icon: '🧪' },
+            { name: 'DeepSeek', url: 'https://chat.deepseek.com/', icon: '🐳' },
+            { name: 'Local', url: 'http://localhost:3000/', icon: '🏠' }
+          ].map((ai) => (
+            <button
+              key={ai.name}
+              onClick={() => handleContinueOn(ai.name, ai.url)}
+              disabled={isGenerating || conversation.messages.length === 0}
+              className="flex flex-col items-center gap-1.5 p-2.5 bg-cream-input hover:bg-cream-pill border border-cream-border rounded-xl transition-all cursor-pointer group disabled:opacity-40 disabled:cursor-not-allowed text-center"
+            >
+              <span className="text-base leading-none group-hover:scale-110 transition-transform">{ai.icon}</span>
+              <span className="text-[8px] font-bold text-cream-muted leading-tight truncate w-full group-hover:text-cream-text">{ai.name}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 3. Manual Meta Overrides / Context Notes */}
+      <div className="space-y-4">
         {/* Goal */}
-        <div className="space-y-1.5">
-          <label className="text-xs font-bold text-cream-text">Active Objective</label>
+        <div className="space-y-1">
+          <label className="text-[9px] uppercase tracking-wider text-cream-muted font-bold">Active Objective / Goal</label>
           <textarea
             value={goal}
             onChange={(e) => setGoal(e.target.value)}
             placeholder="Describe the current target of this conversation..."
             rows={2}
-            className="w-full bg-cream-input border border-cream-border focus:border-cream-text focus:ring-1 focus:ring-cream-text rounded-xl py-2.5 px-3 text-xs text-cream-text outline-none transition-all resize-none shadow-inner placeholder-cream-muted/50"
+            className="w-full bg-cream-input border border-cream-border focus:border-cream-text focus:ring-1 focus:ring-cream-text rounded-xl py-2 px-3 text-xs text-cream-text outline-none transition-all resize-none shadow-inner placeholder-cream-muted/50 font-medium"
           />
         </div>
 
         {/* Decisions */}
-        <div className="space-y-1.5">
-          <label className="text-xs font-bold text-cream-text">Decisions & Stack</label>
+        <div className="space-y-1">
+          <label className="text-[9px] uppercase tracking-wider text-cream-muted font-bold">Key Decisions & Tech Stack</label>
           <div className="flex gap-2">
             <input
               type="text"
@@ -307,7 +432,7 @@ export const ActiveChatTab: React.FC<ActiveChatTabProps> = ({ onCapsuleSaved }) 
               value={newDecision}
               onChange={(e) => setNewDecision(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && addDecision()}
-              className="flex-1 bg-cream-input border border-cream-border focus:border-cream-text focus:ring-1 focus:ring-cream-text rounded-xl py-2 px-3 text-xs text-cream-text outline-none transition-all placeholder-cream-muted/50"
+              className="flex-1 bg-cream-input border border-cream-border focus:border-cream-text focus:ring-1 focus:ring-cream-text rounded-xl py-2 px-3 text-xs text-cream-text outline-none transition-all placeholder-cream-muted/50 font-medium"
             />
             <button
               onClick={addDecision}
@@ -317,12 +442,12 @@ export const ActiveChatTab: React.FC<ActiveChatTabProps> = ({ onCapsuleSaved }) 
             </button>
           </div>
           {decisions.length > 0 && (
-            <ul className="space-y-1 bg-cream-card/50 p-2 rounded-xl border border-cream-border/60">
+            <ul className="space-y-1 mt-1.5 bg-cream-card/50 p-2 rounded-xl border border-cream-border/60">
               {decisions.map((dec, idx) => (
-                <li key={idx} className="text-[11px] text-cream-text/95 flex justify-between items-center bg-cream-input py-1 px-2.5 rounded-lg border border-cream-border/30">
+                <li key={idx} className="text-[10px] text-cream-text/95 flex justify-between items-center bg-cream-input py-1 px-2.5 rounded-lg border border-cream-border/30 font-medium">
                   <span className="truncate max-w-[210px]">{dec}</span>
                   <button onClick={() => removeDecision(idx)} className="text-cream-muted hover:text-red-500 transition-colors">
-                    <Trash2 className="w-3.5 h-3.5" />
+                    <Trash2 className="w-3 h-3" />
                   </button>
                 </li>
               ))}
@@ -331,8 +456,8 @@ export const ActiveChatTab: React.FC<ActiveChatTabProps> = ({ onCapsuleSaved }) 
         </div>
 
         {/* Tasks */}
-        <div className="space-y-1.5">
-          <label className="text-xs font-bold text-cream-text">Tasks remaining</label>
+        <div className="space-y-1">
+          <label className="text-[9px] uppercase tracking-wider text-cream-muted font-bold">Pending Actions (Next Steps)</label>
           <div className="flex gap-2">
             <input
               type="text"
@@ -340,7 +465,7 @@ export const ActiveChatTab: React.FC<ActiveChatTabProps> = ({ onCapsuleSaved }) 
               value={newTask}
               onChange={(e) => setNewTask(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && addTask()}
-              className="flex-1 bg-cream-input border border-cream-border focus:border-cream-text focus:ring-1 focus:ring-cream-text rounded-xl py-2 px-3 text-xs text-cream-text outline-none transition-all placeholder-cream-muted/50"
+              className="flex-1 bg-cream-input border border-cream-border focus:border-cream-text focus:ring-1 focus:ring-cream-text rounded-xl py-2 px-3 text-xs text-cream-text outline-none transition-all placeholder-cream-muted/50 font-medium"
             />
             <button
               onClick={addTask}
@@ -350,12 +475,12 @@ export const ActiveChatTab: React.FC<ActiveChatTabProps> = ({ onCapsuleSaved }) 
             </button>
           </div>
           {tasks.length > 0 && (
-            <ul className="space-y-1 bg-cream-card/50 p-2 rounded-xl border border-cream-border/60">
+            <ul className="space-y-1 mt-1.5 bg-cream-card/50 p-2 rounded-xl border border-cream-border/60">
               {tasks.map((task, idx) => (
-                <li key={idx} className="text-[11px] text-cream-text/95 flex justify-between items-center bg-cream-input py-1 px-2.5 rounded-lg border border-cream-border/30">
+                <li key={idx} className="text-[10px] text-cream-text/95 flex justify-between items-center bg-cream-input py-1 px-2.5 rounded-lg border border-cream-border/30 font-medium">
                   <span className="truncate max-w-[210px]">{task}</span>
                   <button onClick={() => removeTask(idx)} className="text-cream-muted hover:text-red-500 transition-colors">
-                    <Trash2 className="w-3.5 h-3.5" />
+                    <Trash2 className="w-3 h-3" />
                   </button>
                 </li>
               ))}
@@ -364,34 +489,17 @@ export const ActiveChatTab: React.FC<ActiveChatTabProps> = ({ onCapsuleSaved }) 
         </div>
 
         {/* Tone override */}
-        <div className="space-y-1.5">
-          <label className="text-xs font-bold text-cream-text">Style Guidelines</label>
+        <div className="space-y-1">
+          <label className="text-[9px] uppercase tracking-wider text-cream-muted font-bold">Custom Preference Notes</label>
           <input
             type="text"
             value={styleNotes}
             onChange={(e) => setStyleNotes(e.target.value)}
             placeholder="e.g. modular, descriptive comments"
-            className="w-full bg-cream-input border border-cream-border focus:border-cream-text focus:ring-1 focus:ring-cream-text rounded-xl py-2 px-3 text-xs text-cream-text outline-none transition-all placeholder-cream-muted/50"
+            className="w-full bg-cream-input border border-cream-border focus:border-cream-text focus:ring-1 focus:ring-cream-text rounded-xl py-2 px-3 text-xs text-cream-text outline-none transition-all placeholder-cream-muted/50 font-medium"
           />
         </div>
       </div>
-
-      {/* Synthesis Trigger Button - Framer Black Pill Style */}
-      <button
-        disabled={isGenerating || conversation.messages.length === 0}
-        onClick={handleCreateCapsule}
-        className="w-full bg-cream-text hover:bg-neutral-800 disabled:bg-cream-muted/40 text-cream-bg rounded-full py-3.5 px-6 font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-sm shadow-cream-text/10"
-      >
-        {isGenerating ? (
-          <>
-            <Cpu className="w-4 h-4 animate-spin" /> Compressing...
-          </>
-        ) : (
-          <>
-            <FileText className="w-4 h-4" /> Synthesize Capsule
-          </>
-        )}
-      </button>
     </div>
   );
 };

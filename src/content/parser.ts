@@ -6,6 +6,11 @@ export interface PlatformAdapter {
   parse(document: Document): Message[];
 }
 
+function getSafeClassName(el: Element): string {
+  const className = el.getAttribute('class');
+  return className ? className : '';
+}
+
 const ChatGPTAdapter: PlatformAdapter = {
   name: 'chatgpt',
   detect: (url) => url.includes('chatgpt.com'),
@@ -149,7 +154,7 @@ const PoeAdapter: PlatformAdapter = {
     const bubbles = doc.querySelectorAll('[class*="Message_messageBubble__"], [class*="messageBubbleUser"]');
     
     bubbles.forEach((el) => {
-      const className = el.className;
+      const className = getSafeClassName(el);
       const isUser = className.includes('messageBubbleUser') || className.includes('User');
       const role = isUser ? 'user' : 'assistant';
       const content = el.textContent?.trim() || '';
@@ -174,7 +179,7 @@ const DeepSeekAdapter: PlatformAdapter = {
     
     elements.forEach((el) => {
       // If it has markdown or specific roles
-      const isUser = el.closest('[class*="user-"]') !== null || el.className.includes('user');
+      const isUser = el.closest('[class*="user-"]') !== null || getSafeClassName(el).includes('user');
       const role = isUser ? 'user' : 'assistant';
       const content = el.textContent?.trim() || '';
       if (content) {
@@ -186,7 +191,7 @@ const DeepSeekAdapter: PlatformAdapter = {
     if (messages.length === 0) {
       const chatItems = doc.querySelectorAll('[class*="message"]');
       chatItems.forEach((el) => {
-        const isUser = el.className.includes('user') || el.innerHTML.includes('user');
+        const isUser = getSafeClassName(el).includes('user') || el.innerHTML.includes('user');
         const role = isUser ? 'user' : 'assistant';
         const content = el.textContent?.trim() || '';
         if (content) {
@@ -212,7 +217,7 @@ const OpenWebUIAdapter: PlatformAdapter = {
       const dataRole = el.getAttribute('data-role');
       let role: 'user' | 'assistant' = 'assistant';
       
-      if (dataRole === 'user' || el.classList.contains('user-message') || el.className.includes('user')) {
+      if (dataRole === 'user' || el.classList.contains('user-message') || getSafeClassName(el).includes('user')) {
         role = 'user';
       }
       
@@ -227,6 +232,40 @@ const OpenWebUIAdapter: PlatformAdapter = {
   }
 };
 
+const GrokAdapter: PlatformAdapter = {
+  name: 'grok',
+  detect: (url) => url.includes('grok.com'),
+  parse: (doc) => {
+    const messages: Message[] = [];
+    
+    // Select elements containing message rows/turns on Grok
+    const elements = doc.querySelectorAll('[data-testid="message-row"], [class*="messageRow"], .message-content, [class*="messageBot"], [class*="messageUser"]');
+    
+    if (elements.length > 0) {
+      elements.forEach((el) => {
+        const isUser = getSafeClassName(el).includes('User') || el.closest('[class*="User"]') !== null;
+        const role = isUser ? 'user' : 'assistant';
+        const content = el.textContent?.trim() || '';
+        if (content) {
+          messages.push({ role, content });
+        }
+      });
+    } else {
+      // Fallback: search for alternating turns or markdown blocks
+      const markdownBlocks = doc.querySelectorAll('.markdown, .prose');
+      markdownBlocks.forEach((el) => {
+        const content = el.textContent?.trim() || '';
+        if (content) {
+          // Typically long markdown blocks are from assistant
+          messages.push({ role: 'assistant', content });
+        }
+      });
+    }
+    
+    return messages;
+  }
+};
+
 // List of all adapters ordered by specificity
 const adapters: PlatformAdapter[] = [
   ChatGPTAdapter,
@@ -235,6 +274,7 @@ const adapters: PlatformAdapter[] = [
   PerplexityAdapter,
   PoeAdapter,
   DeepSeekAdapter,
+  GrokAdapter,
   OpenWebUIAdapter
 ];
 
@@ -250,6 +290,23 @@ export function getAdapterForUrl(url: string): PlatformAdapter | null {
 export function parseConversation(url: string, document: Document): ScrapedConversation {
   const adapter = getAdapterForUrl(url);
   const messages = adapter ? adapter.parse(document) : [];
+
+  // Extract file names from message text
+  const fileExtensionRegex = /\b[\w\-.]+\.(pdf|pptx|docx|txt|csv|xlsx|zip|png|jpg|jpeg|gif|html|json|md)\b/gi;
+  messages.forEach(m => {
+    const files: string[] = [];
+    const matches = m.content.match(fileExtensionRegex);
+    if (matches) {
+      matches.forEach(fn => {
+        if (!files.includes(fn)) {
+          files.push(fn);
+        }
+      });
+    }
+    if (files.length > 0) {
+      m.files = files;
+    }
+  });
   
   // Extract Title from page heading or page title
   let title = document.title || 'AI Chat Session';
@@ -261,10 +318,12 @@ export function parseConversation(url: string, document: Document): ScrapedConve
     .replace(' - Perplexity', '')
     .replace(' - Poe', '')
     .replace('DeepSeek', '')
+    .replace(' - Grok', '')
+    .replace('Grok', '')
     .trim();
   
   // Heuristic: If title is generic, use the first 6 words of the first user message
-  if ((title === 'ChatGPT' || title === 'Claude' || title === 'Gemini' || title === 'New Chat' || title === 'AI Chat Session') && messages.length > 0) {
+  if ((title === 'ChatGPT' || title === 'Claude' || title === 'Gemini' || title === 'Grok' || title === 'New Chat' || title === 'AI Chat Session') && messages.length > 0) {
     const firstUserMsg = messages.find(m => m.role === 'user');
     if (firstUserMsg) {
       const words = firstUserMsg.content.split(/\s+/).slice(0, 6).join(' ');

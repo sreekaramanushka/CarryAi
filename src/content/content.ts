@@ -165,3 +165,37 @@ chrome.runtime.onMessage.addListener((message: ExtensionMessage, sender, sendRes
     return true;
   }
 });
+
+/**
+ * Checks for a pending prompt to inject and polls until the input box is ready.
+ */
+function checkAndInjectPendingPrompt() {
+  if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+    chrome.storage.local.get(['pendingInjectionPrompt'], (res) => {
+      const prompt = res.pendingInjectionPrompt;
+      if (prompt) {
+        console.log('CarryAI: Found pending prompt to auto-inject. Polling for input box...');
+        let attempts = 0;
+        const maxAttempts = 80; // 80 attempts * 250ms = 20 seconds max
+        const interval = setInterval(() => {
+          attempts++;
+          const success = injectTextIntoInput(prompt);
+          if (success || attempts >= maxAttempts) {
+            clearInterval(interval);
+            if (success) {
+              console.log('CarryAI: Auto-injection of pending prompt succeeded.');
+              chrome.storage.local.remove(['pendingInjectionPrompt'], () => {
+                console.log('CarryAI: Cleared pendingInjectionPrompt.');
+              });
+            } else {
+              console.warn('CarryAI: Auto-injection failed or timed out after 20s.');
+            }
+          }
+        }, 250);
+      }
+    });
+  }
+}
+
+// Execute check immediately on script load
+checkAndInjectPendingPrompt();

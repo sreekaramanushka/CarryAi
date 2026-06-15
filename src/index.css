@@ -1,29 +1,64 @@
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Playfair+Display:ital,wght@1,400;1,600;1,700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=DM+Mono:wght@400;500&display=swap');
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Outfit", sans-serif;
-  --font-serif: "Playfair Display", serif;
+  --font-sans: "DM Sans", sans-serif;
+  --font-mono: "DM Mono", monospace;
   
-  /* Light Cream Theme Variables */
-  --color-cream-bg: #F5F2EB;
-  --color-cream-card: #FCFAF7;
-  --color-cream-pill: #EAE6DD;
-  --color-cream-border: #E2DDD3;
-  --color-cream-input: #FFFFFF;
-  --color-cream-text: #1C1917;
-  --color-cream-muted: #706A62;
+  /* Map ContextSwitchAI Slate Theme variables to tailwind classes */
+  --color-cream-bg: var(--bg);
+  --color-cream-card: var(--s1);
+  --color-cream-pill: var(--s2);
+  --color-cream-border: var(--s3);
+  --color-cream-input: var(--input-bg);
+  --color-cream-text: var(--t1);
+  --color-cream-muted: var(--t2);
 }
 
-/* Dark Mode Theme Overrides */
+:root {
+  --bg:      #f4f5f9;
+  --s1:      #ffffff;
+  --s2:      #eef0f6;
+  --s3:      #d8dce8;
+  --t1:      #0d1117;
+  --t2:      #4a5568;
+  --t3:      #8a9bb5;
+  --t4:      #c0cad8;
+  --cyan:    #0078d4;
+  --cyan-d:  rgba(0,120,212,0.09);
+  --cyan-bd: rgba(0,120,212,0.25);
+  --green:   #16a34a;
+  --green-d: rgba(22,163,74,0.09);
+  --green-bd:rgba(22,163,74,0.25);
+  --amber:   #d97706;
+  --red:     #dc2626;
+  --b1:      rgba(0,0,0,0.07);
+  --b2:      rgba(0,0,0,0.13);
+  --r:       10px;
+  --r-sm:    6px;
+  --input-bg: #ffffff;
+}
+
 .dark {
-  --color-cream-bg: #0F0E0C;
-  --color-cream-card: #171513;
-  --color-cream-pill: #26231E;
-  --color-cream-border: #2C2823;
-  --color-cream-input: #080706;
-  --color-cream-text: #F5F2EB;
-  --color-cream-muted: #9E998F;
+  --bg:      #0d1117;
+  --s1:      #161b22;
+  --s2:      #21262d;
+  --s3:      #30363d;
+  --t1:      #c9d1d9;
+  --t2:      #8b949e;
+  --t3:      #6e7681;
+  --t4:      #484f58;
+  --cyan:    #58a6ff;
+  --cyan-d:  rgba(88,166,255,0.15);
+  --cyan-bd: rgba(88,166,255,0.30);
+  --green:   #3fb950;
+  --green-d: rgba(63,185,80,0.15);
+  --green-bd:rgba(63,185,80,0.30);
+  --amber:   #d29922;
+  --red:     #f85149;
+  --b1:      rgba(255,255,255,0.07);
+  --b2:      rgba(255,255,255,0.13);
+  --input-bg: #21262d;
 }
 
 /* Global scrollbar adjustments matching the aesthetic */
