@@ -57,7 +57,7 @@ const AppContent: React.FC = () => {
       </main>
 
       {/* Sticky Bottom Tabbar - Matching Framer Aesthetic */}
-      <nav className="fixed bottom-4 left-4 right-4 z-50 bg-cream-card/90 backdrop-blur-xl border border-cream-border/60 p-1.5 rounded-full flex justify-between shadow-lg shadow-cream-text/5">
+      <nav className="fixed bottom-4 left-2.5 right-2.5 z-50 bg-cream-card/90 backdrop-blur-xl border border-cream-border/60 p-1 rounded-full flex justify-between shadow-lg shadow-cream-text/5">
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = activeTab === item.id;
@@ -65,10 +65,10 @@ const AppContent: React.FC = () => {
             <button
               key={item.id}
               onClick={() => setActiveTab(item.id)}
-              className={`flex items-center gap-1.5 py-2.5 px-4 rounded-full transition-all duration-300 cursor-pointer ${
+              className={`flex items-center gap-1 rounded-full transition-all duration-300 cursor-pointer ${
                 isActive
-                  ? 'text-cream-bg bg-cream-text font-semibold shadow-sm'
-                  : 'text-cream-muted hover:text-cream-text hover:bg-cream-pill/40'
+                  ? 'text-cream-bg bg-cream-text font-semibold shadow-sm px-3.5 py-2'
+                  : 'text-cream-muted hover:text-cream-text hover:bg-cream-pill/40 px-2.5 py-1.5'
               }`}
             >
               <Icon className="w-3.5 h-3.5" />
